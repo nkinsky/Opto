@@ -2,7 +2,7 @@
 
 folder = r'C:\Users\Nat\Documents\UM\Working\Opto\Rat594\2019DEC06'
 
-import OpenEphys as oe
+import Python3.OpenEphys as oe
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy.io as sio
