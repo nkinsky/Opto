@@ -20,10 +20,11 @@ import helpers
 # First import openephys data
 def load_openephys(folder):
     """Loads in openephys continuous and event data. Openephys format ok, binary format not yet finished/vetted"""
-    try:  # Load in openephy format
+    try:  # Load in openephy sformat
         cont_array = oe.loadFolder(folder)
         events = oe.loadEvents(os.path.join(folder, 'all_channels.events'))
         oe_type = 'oe'
+        Rate = 'See cont_array variable'
     except ZeroDivisionError:  # load in binary format - not yet finished
 
         binData, Rate = ob.Load(folder)
@@ -33,15 +34,17 @@ def load_openephys(folder):
         event_data = []
         for file_name in ['channel_states.npy', 'channels.npy', 'full_words.npy', 'timestamps.npy']:
             event_data.append(np.load(os.path.join(event_folder, file_name)))
+
+        cont_array, Rate = ob.Load(folder)
         oe_type = 'binary'
 
-    return event_data, cont_array
+    return event_data, cont_array, Rate
 
 
 ## Next import MATLAB data - must have only one mat file in folder!
 def load_mat(folder):
     """
-    Load .mat file with synchornized optitrack time/position, linear position, matlab time, trigger events, and start/minute
+    Load .mat file with synchronized optitrack time/position, linear position, matlab time, trigger events, and start/minute
     tracker
     :param:
     """
@@ -87,26 +90,73 @@ def load_opti(folder):
 
 
 ## Plot x,y,z, pos over time
-def plot_opti_v_mat(opti_data, mat_data):
-    fig1, ax1 = plt.subplots(3, 2)
-    fig1.set_size_inches([10, 6.4])
+def plot_opti_v_mat(opti_data, mat_data, cont_data=np.nan, event_data=np.nan, Rate=30000, on_off_chan=8,
+                    LED_chans = [1, 2, 4, 6]):
+    """
+    Plot optitrack v matlab tracking and continuous data (binary only enabled so far...)
+    NEED TO CHECK LED channels!!!
+    """
+    fig1, ax1 = plt.subplots(3, 3)
+    fig1.set_size_inches([15, 6.4])
     ax1[0][0].plot(opti_data['Time (Seconds)'], opti_data['X.2'])
+    ax1[0][0].set_ylabel('Xpos Opti')
+    ax1[0][0].set_xlabel('Opti time absolute')
     ax1[1][0].plot(opti_data['Time (Seconds)'], opti_data['Y.2'])
+    ax1[1][0].set_ylabel('Ypos Opti')
+    ax1[1][0].set_xlabel('Opti time absolute')
     ax1[2][0].plot(opti_data['Time (Seconds)'], opti_data['Z.2'])
+    ax1[2][0].set_ylabel('Zpos Opti')
+    ax1[2][0].set_xlabel('Opti time absolute')
 
     # Get time elapsed
     tdiff = helpers.mat_time_to_sec(mat_data['time_mat'][0, :], mat_data['time_mat'])
-
+    # Plot matlab values received from optitrack
     ax1[0][1].plot(tdiff,  mat_data['pos_opti'][:, 0])
     ax1[1][1].plot(tdiff, mat_data['pos_opti'][:, 1])
     ax1[2][1].plot(tdiff, mat_data['pos_opti'][:, 2])
+
+    # Plot trigger on and off
+    trig_bool = mat_data['trig_on'][:, 0] > 0.9
+    ax1[0][1].plot(tdiff[trig_bool], mat_data['pos_opti'][trig_bool, 0], 'r.')
+    ax1[0][1].set_ylabel('Xpos Mat')
+    ax1[0][1].set_xlabel('Mat_time from start')
+    ax1[1][1].plot(tdiff[trig_bool], mat_data['pos_opti'][trig_bool, 1], 'r.')
+    ax1[1][1].set_ylabel('Ypos Mat')
+    ax1[1][1].set_xlabel('Mat_time from start')
+    ax1[2][1].plot(tdiff[trig_bool], mat_data['pos_opti'][trig_bool, 2], 'r.')
+    ax1[2][1].set_ylabel('Zpos Mat')
+    ax1[2][1].set_xlabel('Mat_time from start')
+
+    # Plot lin pos with triggering vs time.
+    ax1[0][2].plot(tdiff, mat_data['pos_lin'][:, 0])
+    ax1[0][2].plot(tdiff[trig_bool], mat_data['pos_lin'][trig_bool, 0], 'r.')
+    ax1[0][2].set_ylabel('Linear position (-1=start, 1=end)')
+    ax1[0][2].set_xlabel('Mat_time from start')
+
+    # Plot trace with stimulations here!!!
+    plot_colors = ['r', 'g', 'b', 'c']
+    # get start, end, and overall times for all continuous timestamps
+    on_time = event_data[3][event_data[0] == on_off_chan]/Rate
+    off_time = event_data[3][event_data[0] == -on_off_chan]/Rate
+    oe_times_aligned = np.arange(cont_data.shape[0]).reshape(cont_data.shape[0], -1) - on_time
+    event_times_aligned = event_data[3]/Rate - on_time
+    ax1[1][2].get_shared_x_axes().join(ax1[1][2], ax1[0][2])
+    ax1[1][2].plot(oe_times_aligned, cont_data)
+    for chan in LED_chans:
+        starts = np.where(event_data[0] == chan)
+        stops = np.where(event_data[0] == -chan)
+        [ax1[1][2].plot(event_times_aligned[[start, start]], ax1[1][2].get_xlim(0), color) for start, color in
+            zip(starts, plot_colors)]
+        [ax1[1][2].plot(event_times_aligned[[stop, stop]], ax1[1][2].get_xlim(0), color) for stop, color in
+         zip(stops, plot_colors)]
+
 
     # plot x/z overhead...
     fig2, ax2 = plt.subplots(1, 2)
     fig2.set_size_inches([6.4, 4.8])
     ax2[0].plot(opti_data['X.2'], opti_data['Z.2'])
     ax2[0].set_title('Optitrack')
-    ax2[1].plot(mat_data['pos_opti'][:,0], mat_data['pos_opti'][:,2])
+    ax2[1].plot(mat_data['pos_opti'][:, 0], mat_data['pos_opti'][:, 2])
     ax2[1].set_title('Opti API -> MATLAB')
 
     return fig1, ax1, fig2, ax2
