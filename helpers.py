@@ -16,20 +16,21 @@ def mat_time_to_sec(t0, t):
     t0py = datetime.datetime(year0, month0, day0, hour0, min0, sec0, msec0)
 
     # Get times to compare
-    year = t[:, 0]
-    month = t[:, 1]
-    day = t[:, 2]
-    hour = t[:, 3]
-    min = t[:, 4]
-    sec = np.floor(t[:, 5])
-    msec = (t[:, 5] - sec)*1000000
+    year = t.reshape(-1, 6)[:, 0]
+    month = t.reshape(-1, 6)[:, 1]
+    day = t.reshape(-1, 6)[:, 2]
+    hour = t.reshape(-1, 6)[:, 3]
+    min = t.reshape(-1, 6)[:, 4]
+    sec = np.floor(t.reshape(-1, 6)[:, 5])
+    msec = (t.reshape(-1, 6)[:, 5] - sec)*1000000
 
     tdiff = []
     for yr, mo, dy, hr, mi, s, ms in zip(year, month, day, hour, min, sec, msec):
         diff_temp = datetime.datetime(int(yr), int(mo), int(dy), int(hr), int(mi), int(s), int(ms)) - t0py
         tdiff.append(diff_temp.total_seconds())
 
-    return tdiff
+    tdiff_array = np.asarray(tdiff)
+    return tdiff_array
 
 
 if __name__ == '__main__':
