@@ -17,7 +17,7 @@ import helpers
 
 
 ## Now load everything
-# First import openephys data
+# First import openephys data - all channels + input TTL events
 def load_openephys(folder):
     """Loads in openephys continuous and event data. Openephys format ok, binary format not yet finished/vetted"""
     try:  # Load in openephy sformat
@@ -39,6 +39,15 @@ def load_openephys(folder):
         oe_type = 'binary'
 
     return event_data, cont_array, Rate
+
+
+## Load events only recorded in binary format
+def load_binary_events(event_folder):
+    event_data = []
+    for file_name in ['channel_states.npy', 'channels.npy', 'full_words.npy', 'timestamps.npy']:
+        event_data.append(np.load(os.path.join(event_folder, file_name)))
+
+    return event_data
 
 
 ## Next import MATLAB data - must have only one mat file in folder!
@@ -109,7 +118,8 @@ def plot_opti_v_mat(opti_data, mat_data, cont_data=np.nan, event_data=np.nan, Ra
     ax1[2][0].set_xlabel('Opti time absolute')
 
     # Get time elapsed
-    tdiff = helpers.mat_time_to_sec(mat_data['time_mat'][0, :], mat_data['time_mat'])
+    record_start_time = mat_data['time_mat'][np.where(np.bitwise_not(np.isnan(mat_data['trig_on'])))[0][0], :]
+    tdiff = helpers.mat_time_to_sec(record_start_time, mat_data['time_mat'])
     # Plot matlab values received from optitrack
     ax1[0][1].plot(tdiff,  mat_data['pos_opti'][:, 0])
     ax1[1][1].plot(tdiff, mat_data['pos_opti'][:, 1])
@@ -135,20 +145,25 @@ def plot_opti_v_mat(opti_data, mat_data, cont_data=np.nan, event_data=np.nan, Ra
 
     # Plot trace with stimulations here!!!
     plot_colors = ['r', 'g', 'b', 'c']
+    # get start time for matlab data
+    try:  # Load from on_minutes input variable which tracks TTL pulses for when recording starts and switches every minute
+        on_time_mat = mat_data['time_mat'][np.where(mat_data['on_minutes'] == 1)[0]]
+    except KeyError:  # if no on_minutes found use first non-nan in 'trig_on'
+        on_time_mat = mat_data['time_mat'][np.where(np.bitwise_not(np.isnan(mat_data['trig_on'])))]
+
     # get start, end, and overall times for all continuous timestamps
     on_time = event_data[3][event_data[0] == on_off_chan]/Rate
     off_time = event_data[3][event_data[0] == -on_off_chan]/Rate
-    oe_times_aligned = np.arange(cont_data.shape[0]).reshape(cont_data.shape[0], -1) - on_time
+    oe_times_aligned = np.arange(cont_data.shape[0]).reshape(cont_data.shape[0], -1)/Rate - on_time
     event_times_aligned = event_data[3]/Rate - on_time
     ax1[1][2].get_shared_x_axes().join(ax1[1][2], ax1[0][2])
     ax1[1][2].plot(oe_times_aligned, cont_data)
-    for chan in LED_chans:
-        starts = np.where(event_data[0] == chan)
-        stops = np.where(event_data[0] == -chan)
-        [ax1[1][2].plot(event_times_aligned[[start, start]], ax1[1][2].get_xlim(0), color) for start, color in
-            zip(starts, plot_colors)]
-        [ax1[1][2].plot(event_times_aligned[[stop, stop]], ax1[1][2].get_xlim(0), color) for stop, color in
-         zip(stops, plot_colors)]
+    ylims = ax1[1][2].get_ylim()
+    for chan, color in zip(LED_chans, plot_colors):
+        starts = np.where(event_data[0] == chan)[0]
+        stops = np.where(event_data[0] == -chan)[0]
+        [ax1[1][2].plot(event_times_aligned[[start, start]], ylims, color) for start in starts]
+        # [ax1[1][2].plot(event_times_aligned[[stop, stop]], ax1[1][2].get_ylim(), color) for stop in stops]
 
 
     # plot x/z overhead...
@@ -170,6 +185,8 @@ def plot_opti_v_mat(opti_data, mat_data, cont_data=np.nan, event_data=np.nan, Ra
 if __name__ == '__main__':
     mat_data = load_mat(test_folder)
     opti_data, opti_start_time = load_opti(test_folder)
-    plot_opti_v_mat(opti_data, mat_data)
+    event_data, cont_array, Rate = load_openephys(test_folder)
+    cont_data = cont_array['100']['0']['0']
+    plot_opti_v_mat(opti_data, mat_data, cont_data=cont_data[:, 3], event_data=event_data)
 
     pass
